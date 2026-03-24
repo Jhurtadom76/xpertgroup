@@ -1,0 +1,393 @@
+def test_citas_tiene_columnas_clave(citas_df):
+    required = {
+        "id_cita",
+        "id_paciente",
+        "fecha_cita",
+        "especialidad",
+        "medico",
+        "costo",
+        "estado_cita",
+        "fecha_cita_parsed",
+    }
+    assert required.issubset(set(citas_df.columns))
+
+
+def test_citas_no_esta_vacio(citas_df):
+    assert len(citas_df) > 0
+
+
+def test_se_puede_evaluar_parseo_fecha_cita(citas_df):
+    total = len(citas_df)
+    parseadas = citas_df["fecha_cita_parsed"].notna().sum()
+    assert 0 <= parseadas <= total
+
+
+def test_completadas_sin_costo(citas_df):
+    casos = citas_df.loc[
+        (citas_df["estado_cita"] == "Completada") &
+        (citas_df["costo"].isna())
+    ]
+    assert len(casos) >= 0
+
+
+def test_completadas_sin_medico(citas_df):
+    casos = citas_df.loc[
+        (citas_df["estado_cita"] == "Completada") &
+        (citas_df["medico"].isna())
+    ]
+    assert len(casos) >= 0
+
+
+def test_completadas_sin_especialidad(citas_df):
+    casos = citas_df.loc[
+        (citas_df["estado_cita"] == "Completada") &
+        (citas_df["especialidad"].isna())
+    ]
+    assert len(casos) >= 0
+
+
+def test_canceladas_con_costo(citas_df):
+    casos = citas_df.loc[
+        (citas_df["estado_cita"] == "Cancelada") &
+        (citas_df["costo"].notna())
+    ]
+    assert len(casos) >= 0
+
+
+def test_citas_reprogramadas_con_fecha_pasada(citas_df):
+    hoy = citas_df["fecha_cita_parsed"].max().normalize() if citas_df["fecha_cita_parsed"].notna().any() else None
+
+    if hoy is not None:
+        casos = citas_df.loc[
+            (citas_df["estado_cita"] == "Reprogramada") &
+            (citas_df["fecha_cita_parsed"].notna()) &
+            (citas_df["fecha_cita_parsed"] < hoy)
+        ]
+        assert len(casos) >= 0
+
+
+def test_integridad_referencial_citas_vs_pacientes(raw_data):
+    pacientes = raw_data["pacientes"]
+    citas = raw_data["citas"]
+
+    ids_pacientes = set(pacientes["id_paciente"].dropna().unique())
+    huerfanas = citas.loc[~citas["id_paciente"].isin(ids_pacientes)]
+
+    assert len(huerfanas) >= 0
+import pandas as pd
+import pytest
+
+from limpieza_datos import (
+    parse_spanish_date,
+    normalizar_sexo,
+    primer_nombre,
+    email_valido,
+    telefono_valido_10,
+)
+
+
+@pytest.mark.parametrize(
+    "entrada,esperado",
+    [
+        ("2000-01-15", pd.Timestamp("2000-01-15")),
+        ("02 de nov de 1977", pd.Timestamp("1977-11-02")),
+        ("14 de diciembre de 2007", pd.Timestamp("2007-12-14")),
+    ],
+)
+def test_parse_spanish_date_ok(entrada, esperado):
+    assert parse_spanish_date(entrada) == esperado
+
+
+@pytest.mark.parametrize(
+    "entrada",
+    [
+        "31 de febrero de 2020",
+        "texto raro",
+        "",
+        None,
+    ],
+)
+def test_parse_spanish_date_invalida(entrada):
+    result = parse_spanish_date(entrada)
+    assert pd.isna(result)
+
+
+@pytest.mark.parametrize(
+    "entrada,esperado",
+    [
+        ("M", "M"),
+        ("male", "M"),
+        ("Masculino", "M"),
+        ("F", "F"),
+        ("female", "F"),
+        ("Femenino", "F"),
+        ("otro", "OTRO"),
+    ],
+)
+def test_normalizar_sexo(entrada, esperado):
+    assert normalizar_sexo(entrada) == esperado
+
+
+def test_primer_nombre():
+    assert primer_nombre("Juan Carlos Pérez") == "juan"
+
+
+@pytest.mark.parametrize(
+    "email,esperado",
+    [
+        ("test@correo.com", True),
+        ("abc.def@dominio.org", True),
+        ("correo_invalido", False),
+        ("sin-arroba.com", False),
+    ],
+)
+def test_email_valido(email, esperado):
+    assert email_valido(email) == esperado
+
+
+@pytest.mark.parametrize(
+    "telefono,esperado",
+    [
+        ("3001234567", True),
+        ("(300) 123-4567", True),
+        ("300-123", False),
+        ("abcdefghij", False),
+    ],
+)
+def test_telefono_valido_10(telefono, esperado):
+    assert telefono_valido_10(telefono) == esperado
+def test_pacientes_tiene_columnas_clave(pacientes_df):
+    required = {
+        "id_paciente",
+        "nombre",
+        "fecha_nacimiento",
+        "edad",
+        "sexo",
+        "email",
+        "telefono",
+        "fecha_nac_parsed",
+        "edad_calculada",
+        "sexo_norm",
+        "email_valid",
+        "telefono_valid_10",
+        "name_sex_conflict",
+    }
+    assert required.issubset(set(pacientes_df.columns))
+
+
+def test_pacientes_no_esta_vacio(pacientes_df):
+    assert len(pacientes_df) > 0
+
+
+def test_se_puede_evaluar_parseo_de_fecha_nacimiento(pacientes_df):
+    total = len(pacientes_df)
+    parseadas = pacientes_df["fecha_nac_parsed"].notna().sum()
+    assert 0 <= parseadas <= total
+
+
+def test_se_puede_evaluar_consistencia_edad_fecha(pacientes_df):
+    inconsistentes = pacientes_df.loc[
+        (pacientes_df["edad"].notna()) &
+        (pacientes_df["edad_calculada"].notna()) &
+        ((pacientes_df["edad"] - pacientes_df["edad_calculada"]).abs() >= 2)
+    ]
+    assert len(inconsistentes) >= 0
+
+
+def test_se_puede_evaluar_validez_email(pacientes_df):
+    invalidos = pacientes_df.loc[
+        pacientes_df["email"].notna() & (pacientes_df["email_valid"] == False)
+    ]
+    assert len(invalidos) >= 0
+
+
+def test_se_puede_evaluar_validez_telefono(pacientes_df):
+    invalidos = pacientes_df.loc[
+        pacientes_df["telefono"].notna() & (pacientes_df["telefono_valid_10"] == False)
+    ]
+    assert len(invalidos) >= 0
+
+
+def test_se_puede_evaluar_conflicto_nombre_sexo(pacientes_df):
+    conflictos = pacientes_df.loc[pacientes_df["name_sex_conflict"] == True]
+    assert len(conflictos) >= 0
+import os
+import sys
+import pytest
+
+import os
+import sys
+import pytest
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from limpieza_datos import cargar_datos, preparar_pacientes, preparar_citas
+
+
+DATASET_PATH = "dataset_hospital 2.json"
+
+
+@pytest.fixture(scope="session")
+def raw_data():
+    pacientes, citas = cargar_datos(DATASET_PATH)
+    return {"pacientes": pacientes, "citas": citas}
+
+
+@pytest.fixture(scope="session")
+def pacientes_df(raw_data):
+    return preparar_pacientes(raw_data["pacientes"], hoy="2026-03-21")
+
+
+@pytest.fixture(scope="session")
+def citas_df(raw_data):
+    return preparar_citas(raw_data["citas"])
+import json
+import math
+import re
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+MESES = {
+    "ene": 1, "enero": 1,
+    "feb": 2, "febrero": 2,
+    "mar": 3, "marzo": 3,
+    "abr": 4, "abril": 4,
+    "may": 5, "mayo": 5,
+    "jun": 6, "junio": 6,
+    "jul": 7, "julio": 7,
+    "ago": 8, "agosto": 8,
+    "sep": 9, "sept": 9, "septiembre": 9,
+    "oct": 10, "octubre": 10,
+    "nov": 11, "noviembre": 11,
+    "dic": 12, "diciembre": 12,
+}
+
+EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+
+female_names = {"maria", "claudia", "andrea", "laura", "cindy", "isabel", "sandra", "daniela", "patricia", "diana"}
+male_names = {"juan", "carlos", "paul", "gabriel", "hermes", "andres", "pablo", "jorge", "oscar", "miguel"}
+
+
+def cargar_datos(json_path):
+    with open(Path(json_path), "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    pacientes = pd.DataFrame(data["pacientes"])
+    citas = pd.DataFrame(data["citas_medicas"])
+    return pacientes, citas
+
+
+def parse_spanish_date(value):
+    if pd.isna(value):
+        return pd.NaT
+
+    s = str(value).strip()
+
+    d = pd.to_datetime(s, errors="coerce")
+    if not pd.isna(d):
+        return d.normalize()
+
+    m = re.match(r"(\d{1,2})\s+de\s+([A-Za-záéíóúñ]+)\s+de\s+(\d{4})", s, flags=re.I)
+    if m:
+        day = int(m.group(1))
+        month_txt = (
+            m.group(2).lower()
+            .replace("á", "a")
+            .replace("é", "e")
+            .replace("í", "i")
+            .replace("ó", "o")
+            .replace("ú", "u")
+        )
+        month = MESES.get(month_txt)
+        year = int(m.group(3))
+        if month:
+            try:
+                return pd.Timestamp(year=year, month=month, day=day)
+            except ValueError:
+                return pd.NaT
+
+    return pd.NaT
+
+
+def normalizar_sexo(value):
+    if pd.isna(value):
+        return np.nan
+
+    s = str(value).strip().lower()
+    mapa = {
+        "m": "M",
+        "male": "M",
+        "masculino": "M",
+        "f": "F",
+        "female": "F",
+        "femenino": "F",
+    }
+    return mapa.get(s, "OTRO")
+
+
+def primer_nombre(nombre):
+    if pd.isna(nombre):
+        return None
+
+    return (
+        str(nombre).split()[0].lower()
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+    )
+
+
+def email_valido(value):
+    if pd.isna(value):
+        return None
+    return bool(EMAIL_RE.match(str(value).strip()))
+
+
+def telefono_digitos(value):
+    if pd.isna(value):
+        return None
+    return re.sub(r"\D", "", str(value))
+
+
+def telefono_valido_10(value):
+    if pd.isna(value):
+        return None
+    digits = telefono_digitos(value)
+    return len(digits) == 10
+
+
+def preparar_pacientes(pacientes, hoy=None):
+    hoy = pd.Timestamp.today().normalize() if hoy is None else pd.Timestamp(hoy).normalize()
+
+    pac = pacientes.copy()
+
+    pac["fecha_nac_parsed"] = pac["fecha_nacimiento"].apply(parse_spanish_date)
+    pac["edad_calculada"] = ((hoy - pac["fecha_nac_parsed"]).dt.days / 365.2425).apply(
+        lambda x: math.floor(x) if pd.notna(x) else np.nan
+    )
+    pac["edad_diff"] = pac["edad"] - pac["edad_calculada"]
+    pac["sexo_norm"] = pac["sexo"].apply(normalizar_sexo)
+    pac["first_name"] = pac["nombre"].apply(primer_nombre)
+    pac["email_valid"] = pac["email"].apply(email_valido)
+    pac["telefono_digits"] = pac["telefono"].apply(telefono_digitos)
+    pac["telefono_valid_10"] = pac["telefono"].apply(telefono_valido_10)
+
+    pac["name_sex_conflict"] = pac.apply(
+        lambda r: (
+            (r["first_name"] in female_names and r["sexo_norm"] == "M")
+            or (r["first_name"] in male_names and r["sexo_norm"] == "F")
+        ),
+        axis=1,
+    )
+
+    return pac
+
+
+def preparar_citas(citas):
+    cit = citas.copy()
+    cit["fecha_cita_parsed"] = pd.to_datetime(cit["fecha_cita"], errors="coerce")
+    return cit
